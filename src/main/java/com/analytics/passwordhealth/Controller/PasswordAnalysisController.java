@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/password")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // Позволява заявки от React в бъдеще
 public class PasswordAnalysisController {
 
     private final PasswordHealthAggregatorService aggregatorService;
