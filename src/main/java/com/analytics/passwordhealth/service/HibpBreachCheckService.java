@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.HexFormat;
 
 @Service
@@ -18,52 +19,42 @@ public class HibpBreachCheckService {
                 .build();
     }
 
-    /**
-     * Проверява колко пъти паролата е засичана в течове чрез k-Anonymity
-     * Връща брой намерени течове (0 ако е сигурна)
-     */
     public long checkBreachCount(String password) {
         if (password == null || password.isEmpty()) {
             return 0;
         }
 
-        // 1. Хеширане на паролата с SHA-1
         String sha1Hash = hashSha1(password).toUpperCase();
-
-        // 2. Разделяне: Първи 5 символа (Prefix) и останалите 35 (Suffix)
         String prefix = sha1Hash.substring(0, 5);
         String suffix = sha1Hash.substring(5);
 
         try {
-            // 3. Извикване на външното API с САМО първите 5 символа
+            // Добавен е timeout от 2 секунди
             String response = webClient.get()
                     .uri("/range/{prefix}", prefix)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block(); // Синхронно изчакване на отговора
+                    .timeout(Duration.ofSeconds(2)) // <-- Прекратява бързо при липса на интернет
+                    .onErrorReturn("") // Връща празен отговор при таймаут/мрежова грешка
+                    .block();
 
-            if (response == null) {
+            if (response == null || response.isEmpty()) {
                 return 0;
             }
 
-            // 4. Локално търсене на суфикса (35 символа) в получения отговор
             for (String line : response.split("\r?\n")) {
                 String[] parts = line.split(":");
-                if (parts[0].equalsIgnoreCase(suffix)) {
-                    return Long.parseLong(parts[1].trim()); // Връща броя съвпадения
+                if (parts.length == 2 && parts[0].equalsIgnoreCase(suffix)) {
+                    return Long.parseLong(parts[1].trim());
                 }
             }
         } catch (Exception e) {
-            // В случай на грешка в мрежата или API-то
-            System.err.println("Error checking HIBP API: " + e.getMessage());
+            System.err.println("HIBP API unavailable (offline mode): " + e.getMessage());
         }
 
         return 0;
     }
 
-    /**
-     * Генерира SHA-1 хеш на текст
-     */
     private String hashSha1(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
